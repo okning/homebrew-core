@@ -31,15 +31,16 @@ concurrency:
 env:
   FORMULA: ${{ github.event.inputs.formula || 'mingw-w64' }}
   HOMEBREW_NO_AUTO_UPDATE: "1"
-  HOMEBREW_NO_INSTALL_FROM_API: "1"
   HOMEBREW_NO_ANALYTICS: "1"
   HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
   HOMEBREW_DEVELOPER: "1"
+  HOMEBREW_NO_ENV_HINTS: "1"
 
 jobs:
   build:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -49,13 +50,13 @@ jobs:
           - os: macos-14 # arm64 Sonoma
     steps:
       - name: Checkout tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: tap-src
 
       - name: Set up Homebrew
         id: brew
-        uses: Homebrew/actions/setup-homebrew@master
+        uses: Homebrew/actions/setup-homebrew@main
 
       - name: Mount checkout as a Homebrew tap
         id: tap
@@ -78,7 +79,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew update-reset || true
           brew install --only-dependencies --build-bottle "${{ steps.tap.outputs.tap }}/${FORMULA}"
 
       - name: Build bottle
@@ -138,7 +138,7 @@ jobs:
     env:
       FORMULA: ${{ github.event.inputs.formula || 'mingw-w64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download bottles
         uses: actions/download-artifact@v4
