@@ -131,7 +131,7 @@ jobs:
   publish:
     name: Publish bottles
     needs: build
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload-to-release != 'false' }}
+    if: ${{ github.event.inputs.upload-to-release != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -19,7 +19,7 @@ class MingwW64 < Formula
   end
 
   bottle do
-    root_url "https://github.com/okning/homebrew-core/releases/download/mingw-w64-14.0.0_1"
+    root_url "https://github.com/okning/homebrew-core/releases/download/mingw-w64-bottles"
   end
 
   # binutils searches for zstd using pkg-config
