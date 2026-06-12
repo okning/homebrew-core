@@ -20,6 +20,9 @@ class MingwW64 < Formula
 
   bottle do
     root_url "https://github.com/okning/homebrew-core/releases/download/mingw-w64-bottles"
+    sha256 cellar: "/opt/homebrew/Cellar", arm64_tahoe:   "480ecd6c3571ff1253ccecb3334d2af6e5f47b0423063d3d94064d5e3c984234"
+    sha256 cellar: "/opt/homebrew/Cellar", arm64_sequoia: "b58c16aaf50e1b4006218efc8dd73d0f4f08ce5aa7f4aa1cf0c72ddcb8ee51c5"
+    sha256 cellar: "/opt/homebrew/Cellar", arm64_sonoma:  "49f4e8bd317101d29f6d646564062cd1dde45807d91f7e937b2d79430ebd23c5"
   end
 
   # binutils searches for zstd using pkg-config
