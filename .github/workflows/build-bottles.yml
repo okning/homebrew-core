@@ -1,0 +1,187 @@
+name: Build bottles
+
+on:
+  workflow_dispatch:
+    inputs:
+      formula:
+        description: Formula name to build (without tap prefix)
+        required: true
+        default: mingw-w64
+      upload-to-release:
+        description: Upload bottles to a GitHub Release
+        required: false
+        default: "true"
+      release-tag:
+        description: Release tag to attach bottles to (created if missing)
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - "Formula/**"
+      - ".github/workflows/build-bottles.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-bottles-${{ github.ref }}-${{ github.event.inputs.formula || 'mingw-w64' }}
+  cancel-in-progress: false
+
+env:
+  FORMULA: ${{ github.event.inputs.formula || 'mingw-w64' }}
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_FROM_API: "1"
+  HOMEBREW_NO_ANALYTICS: "1"
+  HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+  HOMEBREW_DEVELOPER: "1"
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26 # arm64 Tahoe
+          - os: macos-15 # arm64 Sequoia
+          - os: macos-14 # arm64 Sonoma
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          path: tap-src
+
+      - name: Set up Homebrew
+        id: brew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Mount checkout as a Homebrew tap
+        id: tap
+        shell: bash
+        run: |
+          set -euo pipefail
+          OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          REPO_BASENAME="$(basename '${{ github.repository }}')"
+          # Strip leading "homebrew-" if the repo is already named that way.
+          TAP_NAME="${REPO_BASENAME#homebrew-}"
+          TAP_DIR="$(brew --repository)/Library/Taps/${OWNER}/homebrew-${TAP_NAME}"
+          mkdir -p "$(dirname "${TAP_DIR}")"
+          rm -rf "${TAP_DIR}"
+          ln -s "${GITHUB_WORKSPACE}/tap-src" "${TAP_DIR}"
+          echo "tap=${OWNER}/${TAP_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "tap_dir=${TAP_DIR}" >> "${GITHUB_OUTPUT}"
+          brew tap-info "${OWNER}/${TAP_NAME}"
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew update-reset || true
+          brew install --only-dependencies --build-bottle "${{ steps.tap.outputs.tap }}/${FORMULA}"
+
+      - name: Build bottle
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install --build-bottle --verbose "${{ steps.tap.outputs.tap }}/${FORMULA}"
+
+      - name: Bottle
+        id: bottle
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          ROOT_URL="https://github.com/${{ github.repository }}/releases/download/${FORMULA}-bottles"
+          if [ -n "${{ github.event.inputs.release-tag }}" ]; then
+            ROOT_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.release-tag }}"
+          fi
+          brew bottle \
+            --verbose \
+            --json \
+            --no-rebuild \
+            --root-url="${ROOT_URL}" \
+            "${{ steps.tap.outputs.tap }}/${FORMULA}"
+          ls -la
+          echo "root_url=${ROOT_URL}" >> "${GITHUB_OUTPUT}"
+
+      - name: Rename bottle archives
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          # `brew bottle` writes files like `formula--version.os.bottle.tar.gz`
+          # with a double-dash that must become a single dash before upload.
+          for f in *--*.bottle.tar.gz *--*.bottle.json; do
+            [ -e "$f" ] || continue
+            mv -v "$f" "${f/--/-}"
+          done
+
+      - name: Upload bottle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bottles-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/*.bottle.tar.gz
+            ${{ runner.temp }}/*.bottle.json
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish bottles
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.upload-to-release != 'false' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FORMULA: ${{ github.event.inputs.formula || 'mingw-w64' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download bottles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bottles-*
+          merge-multiple: true
+          path: bottles
+
+      - name: List bottles
+        run: ls -la bottles
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.release-tag }}"
+          if [ -z "${TAG}" ]; then
+            TAG="${FORMULA}-bottles"
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload bottles to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: |
+            bottles/*.bottle.tar.gz
+            bottles/*.bottle.json
+
+      - name: Print bottle DSL
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Suggested bottle DSL blocks"
+          for j in bottles/*.bottle.json; do
+            echo "--- ${j} ---"
+            cat "${j}"
+            echo
+          done
+          echo "::endgroup::"
+          echo "Merge the JSON files into the formula locally with:"
+          echo "  brew bottle --merge --write --no-commit bottles/*.bottle.json"

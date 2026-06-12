@@ -1,5 +1,5 @@
 class MingwW64 < Formula
-  desc "Minimalist GNU for Windows and GCC cross-compilers"
+  desc "Minimalist GNU for Windows and GCC cross-compilers (msvcrt runtime)"
   homepage "https://sourceforge.net/projects/mingw-w64/"
   url "https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v14.0.0.tar.bz2"
   sha256 "6eaf921d9eb987d3820b364ea9775bc19b965ec81490b6fdd716526c28e1995c"
@@ -11,10 +11,15 @@ class MingwW64 < Formula
     # gcc
     "GPL-3.0-or-later" => { with: "GCC-exception-3.1" },
   ]
+  revision 1
 
   livecheck do
     url :stable
     regex(%r{url=.*?release/mingw-w64[._-]v?(\d+(?:\.\d+)+)\.t}i)
+  end
+
+  bottle do
+    root_url "https://github.com/okning/homebrew-core/releases/download/mingw-w64-14.0.0_1"
   end
 
   # binutils searches for zstd using pkg-config
@@ -75,7 +80,9 @@ class MingwW64 < Formula
       ENV.prepend_path "PATH", "#{arch_dir}/bin"
 
       mkdir "mingw-w64-headers/build-#{arch}" do
-        system "../configure", "--host=#{target}", "--prefix=#{arch_dir}/#{target}", "--with-default-msvcrt=msvcrt"
+        system "../configure", "--host=#{target}",
+                               "--prefix=#{arch_dir}/#{target}",
+                               "--with-default-msvcrt=msvcrt"
         system "make"
         system "make", "install"
       end
